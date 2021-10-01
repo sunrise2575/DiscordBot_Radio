@@ -14,6 +14,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/seehuhn/mt19937"
+	"github.com/tidwall/gjson"
 )
 
 type DiscordCommand struct {
@@ -193,6 +194,45 @@ func makeCommands() DiscordCommands {
 			} else {
 				target := arg[1:][rng.Intn(len(arg[1:]))]
 				sess.ChannelMessageSend(msg.ChannelID, fmt.Sprintln(arg[1:], "중 당첨자:", "`"+target+"`"))
+			}
+		},
+	}
+
+	result["couple"] = DiscordCommand{
+		Description: "짝짓기 한다. (경고: 결과가 끔찍할 수 있음)",
+		Callback: func(arg []string, sess *discordgo.Session, msg *discordgo.Message) {
+			rng := rand.New(mt19937.New())
+			rng.Seed(time.Now().UnixNano())
+
+			members, e := sess.GuildMembers(msg.GuildID, "", 1000)
+			if e != nil {
+				log.Println(e)
+				return
+			}
+
+			for {
+				target := [2]*discordgo.Member{}
+				target[0], target[1] = members[rng.Intn(len(members))], members[rng.Intn(len(members))]
+
+				if target[0].User.ID != sess.State.User.ID && target[1].User.ID != sess.State.User.ID {
+					name := [2]string{}
+					for i := range name {
+						if len(target[i].Nick) > 0 {
+							name[i] = "`" + target[i].Nick + "` (`" + target[i].User.Username + "`)"
+						} else {
+							name[i] = target[i].User.Username
+						}
+					}
+
+					acts := gjson.Parse(readFileAsString("./txt/couple.json")).Get("content").Array()
+					idx := rng.Intn(len(acts))
+					activity := acts[idx].Get("activity").String()
+					message := acts[idx].Get("message").String()
+
+					sess.ChannelMessageSend(msg.ChannelID, fmt.Sprintln(name[0], activity, name[1], " -- ", message))
+
+					break
+				}
 			}
 		},
 	}
