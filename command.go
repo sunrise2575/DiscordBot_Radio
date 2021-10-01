@@ -57,9 +57,9 @@ func makeCommands() DiscordCommands {
 				} else {
 					str = "뒷면"
 				}
-				sess.ChannelMessageSend(msg.ChannelID, fmt.Sprintln("동전을 던졌다:", str))
+				sess.ChannelMessageSend(msg.ChannelID, fmt.Sprintln("동전을 던졌다:", "`"+str+"`"))
 			} else {
-				sess.ChannelMessageSend(msg.ChannelID, fmt.Sprintln(arg[1]+"면체 주사위를 굴렸다:", rng.Intn(target)+1))
+				sess.ChannelMessageSend(msg.ChannelID, fmt.Sprintln("`"+arg[1]+"`면체 주사위를 굴렸다:", fmt.Sprint("`", rng.Intn(target)+1, "`")))
 			}
 		},
 	}
@@ -168,32 +168,27 @@ func makeCommands() DiscordCommands {
 	}
 
 	result["pick"] = DiscordCommand{
-		Description: "당첨시킨다. `pick <A>...`",
+		Description: "당첨시킨다.",
 		Callback: func(arg []string, sess *discordgo.Session, msg *discordgo.Message) {
 			rng := rand.New(mt19937.New())
 			rng.Seed(time.Now().UnixNano())
 
-			if len(arg) < 2 {
-				members, e := sess.GuildMembers(msg.GuildID, "", 1000)
-				if e != nil {
-					log.Println(e)
-					return
-				}
+			members, e := sess.GuildMembers(msg.GuildID, "", 1000)
+			if e != nil {
+				log.Println(e)
+				return
+			}
 
-				for {
-					target := members[rng.Intn(len(members))]
-					if target.User.ID != sess.State.User.ID {
-						if len(target.Nick) > 0 {
-							sess.ChannelMessageSend(msg.ChannelID, fmt.Sprintln("여기 멤버 중 당첨자:", "`"+target.Nick+"`", "(`"+target.User.Username+"`)"))
-						} else {
-							sess.ChannelMessageSend(msg.ChannelID, fmt.Sprintln("여기 멤버 중 당첨자:", "`"+target.User.Username+"`"))
-						}
-						break
+			for {
+				target := members[rng.Intn(len(members))]
+				if target.User.ID != sess.State.User.ID {
+					if len(target.Nick) > 0 {
+						sess.ChannelMessageSend(msg.ChannelID, fmt.Sprintln("여기 멤버 중 당첨자:", "`"+target.Nick+"`", "(`"+target.User.Username+"`)"))
+					} else {
+						sess.ChannelMessageSend(msg.ChannelID, fmt.Sprintln("여기 멤버 중 당첨자:", "`"+target.User.Username+"`"))
 					}
+					break
 				}
-			} else {
-				target := arg[1:][rng.Intn(len(arg[1:]))]
-				sess.ChannelMessageSend(msg.ChannelID, fmt.Sprintln(arg[1:], "중 당첨자:", "`"+target+"`"))
 			}
 		},
 	}
@@ -234,6 +229,109 @@ func makeCommands() DiscordCommands {
 					break
 				}
 			}
+		},
+	}
+
+	result["rank"] = DiscordCommand{
+		Description: "랭킹을 본다. `rank` == 5명 랭킹, `rank <n>` == n명 랭킹",
+		Callback: func(arg []string, sess *discordgo.Session, msg *discordgo.Message) {
+			rng := rand.New(mt19937.New())
+			rng.Seed(time.Now().UnixNano())
+
+			members, e := sess.GuildMembers(msg.GuildID, "", 1000)
+			if e != nil {
+				log.Println(e)
+				return
+			}
+
+			rng.Shuffle(len(members), func(i, j int) {
+				members[i], members[j] = members[j], members[i]
+			})
+
+			maxCount := 5
+
+			if len(arg) >= 2 {
+				if _target, e := strconv.ParseInt(arg[1], 10, 64); e != nil {
+					log.Println(e)
+					return
+				} else {
+					maxCount = int(_target)
+				}
+			}
+
+			if maxCount > len(members)-1 {
+				maxCount = len(members) - 1
+			}
+
+			result := ">>> "
+			for i, count := 0, 0; count < maxCount && i < len(members); i++ {
+				target := members[i]
+
+				if target.User.ID == sess.State.User.ID {
+					continue
+				}
+
+				result += strconv.Itoa(count+1) + "위: "
+
+				if len(target.Nick) > 0 {
+					result += "`" + target.Nick + "` (`" + target.User.Username + "`)"
+				} else {
+					result += "`" + target.User.Username + "`"
+				}
+
+				result += "\n"
+
+				count++
+			}
+			sess.ChannelMessageSend(msg.ChannelID, result)
+		},
+	}
+
+	result["member"] = DiscordCommand{
+		Description: "멤버를 본다",
+		Callback: func(arg []string, sess *discordgo.Session, msg *discordgo.Message) {
+			members, e := sess.GuildMembers(msg.GuildID, "", 1000)
+			if e != nil {
+				log.Println(e)
+				return
+			}
+
+			sort.Slice(members, func(i, j int) bool {
+				iName, jName := "", ""
+				if len(members[i].Nick) > 0 {
+					iName = members[i].Nick
+				} else {
+					iName = members[i].User.Username
+				}
+
+				if len(members[j].Nick) > 0 {
+					jName = members[j].Nick
+				} else {
+					jName = members[j].User.Username
+				}
+
+				return iName < jName
+			})
+
+			result := "```"
+			for i := 0; i < len(members); i++ {
+				target := members[i]
+
+				if target.User.ID == sess.State.User.ID {
+					continue
+				}
+
+				if len(target.Nick) > 0 {
+					result += target.Nick
+				} else {
+					result += target.User.Username
+				}
+
+				result += "\n"
+			}
+
+			result += "```"
+			sess.ChannelMessageSend(msg.ChannelID, result)
 		},
 	}
 
