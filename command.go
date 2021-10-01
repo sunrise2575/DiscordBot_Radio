@@ -199,11 +199,8 @@ func makeCommands() DiscordCommands {
 	}
 
 	result["couple"] = DiscordCommand{
-		Description: "짝짓기 한다. (경고: 결과가 끔찍할 수 있음)",
+		Description: "짝짓기 한다.",
 		Callback: func(arg []string, sess *discordgo.Session, msg *discordgo.Message) {
-			rng := rand.New(mt19937.New())
-			rng.Seed(time.Now().UnixNano())
-
 			members, e := sess.GuildMembers(msg.GuildID, "", 1000)
 			if e != nil {
 				log.Println(e)
@@ -211,6 +208,9 @@ func makeCommands() DiscordCommands {
 			}
 
 			for {
+				rng := rand.New(mt19937.New())
+				rng.Seed(time.Now().UnixNano())
+
 				target := [2]*discordgo.Member{}
 				target[0], target[1] = members[rng.Intn(len(members))], members[rng.Intn(len(members))]
 
@@ -220,7 +220,7 @@ func makeCommands() DiscordCommands {
 						if len(target[i].Nick) > 0 {
 							name[i] = "`" + target[i].Nick + "` (`" + target[i].User.Username + "`)"
 						} else {
-							name[i] = target[i].User.Username
+							name[i] = "`" + target[i].User.Username + "`"
 						}
 					}
 
