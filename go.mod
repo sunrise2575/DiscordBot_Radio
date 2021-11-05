@@ -1,4 +1,4 @@
-module github.com/sunrise2575/discord.bot.moooclub
+module github.com/sunrise2575/moooclub-radio
 
 go 1.16
 
