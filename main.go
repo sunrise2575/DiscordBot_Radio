@@ -11,9 +11,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bwmarrin/dgvoice"
 	"github.com/bwmarrin/discordgo"
 	"github.com/seehuhn/mt19937"
+	"github.com/sunrise2575/dgvoice"
 	"github.com/tidwall/gjson"
 
 	"database/sql"
