@@ -73,6 +73,83 @@ func findFilesInFolderRecursive(folderPath string) []string {
 	return result
 }
 
+func dbExec(db *sql.DB, query string, parameters ...interface{}) int {
+	result, e := db.Exec(query, parameters...)
+	if e != nil {
+		log.Printf("dbExec error: %v, query: %v", e, query)
+		return -1
+	}
+
+	affected, e := result.RowsAffected()
+	if e != nil {
+		log.Printf("dbExec error: %v, query: %v", e, query)
+		return -1
+	}
+
+	return int(affected)
+}
+
+func dbQuery(db *sql.DB, query string, parameters ...interface{}) [][]string {
+	result := [][]string{}
+
+	rows, e := db.Query(query, parameters...)
+	if e != nil {
+		log.Printf("dbQuery error: %v, query: %v", e, query)
+		return nil
+	}
+	defer rows.Close()
+
+	columns, e := rows.Columns()
+	if e != nil {
+		log.Printf("dbQuery error: %v, query: %v", e, query)
+		return nil
+	}
+
+	ptr := make([]interface{}, len(columns))
+	temp := make([]string, len(columns))
+	for i := range temp {
+		ptr[i] = &temp[i]
+	}
+
+	for rows.Next() {
+		if e := rows.Scan(ptr...); e != nil {
+			log.Printf("dbQuery error: %v, query: %v", e, query)
+			return nil
+		}
+
+		result = append(result, make([]string, len(columns)))
+		copy(result[len(result)-1], temp)
+	}
+
+	return result
+}
+
+/*
+func dbTx(db *sql.DB, procedure func(*sql.Tx) bool) bool {
+	tx, e := db.Begin()
+	if e != nil {
+		log.Printf("dbTx Begin error: %v", e)
+		return false
+	}
+
+	if procedure(tx) {
+		e := tx.Commit()
+		if e != nil {
+			log.Printf("dbTx Commit error: %v", e)
+			return false
+		}
+		return true
+	} else {
+		e := tx.Rollback()
+		if e != nil {
+			log.Printf("dbTx Rollback error: %v", e)
+			return false
+		}
+		return false
+	}
+}
+*/
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
@@ -121,15 +198,15 @@ func main() {
 	defer db.Close()
 
 	// create table
-	if _, e := db.Exec(`
+	dbExec(db, `
 		CREATE TABLE channels (
-			guild_id bigint not null,
-			channel_id bigint not null,
+			guild_id BIGINT NOT NULL,
+			channel_id BIGINT NOT NULL,
 			channel_type TEXT CHECK(channel_type IN ('text', 'voice')),
+			currently_using BOOL DEFAULT FALSE,
+			currently_playing TEXT DEFAULT NULL,
 			primary key (guild_id, channel_id)
-		)`); e != nil {
-		log.Fatal(e)
-	}
+		)`)
 
 	// when be invitated / log on the guild
 	discord.AddHandler(func(session *discordgo.Session, event *discordgo.GuildCreate) {
@@ -175,18 +252,8 @@ func main() {
 			}
 
 			if channel_type != "" {
-				// insert voice channel
-				r, e := db.Exec("INSERT INTO channels (guild_id, channel_id, channel_type) VALUES (?, ?, ?)",
+				dbExec(db, "INSERT INTO channels (guild_id, channel_id, channel_type) VALUES (?, ?, ?)",
 					event.Guild.ID, channel.ID, channel_type)
-
-				if e != nil {
-					log.Println(e)
-					continue
-				}
-
-				if _, e := r.RowsAffected(); e != nil {
-					log.Println(e)
-				}
 			}
 		}
 	})
@@ -196,25 +263,15 @@ func main() {
 
 	// find voice channel
 	func() {
-		rows, e := db.Query(`
+		table := dbQuery(db, `
 			SELECT guild_id, MIN(channel_id)
 			FROM channels
 			WHERE channel_type == 'voice'
 			GROUP BY guild_id
 		`)
-		if e != nil {
-			log.Print(e)
-			return
-		}
-		defer rows.Close()
 
-		for rows.Next() {
-			guildID, channelID := "", ""
-
-			if e := rows.Scan(&guildID, &channelID); e != nil {
-				log.Println(e)
-				continue
-			}
+		for _, row := range table {
+			guildID, channelID := row[0], row[1]
 
 			guild, e := discord.Guild(guildID)
 			if e != nil {
@@ -263,27 +320,14 @@ func main() {
 		}
 
 		// find text channels
-		rows, e := db.Query(`
+		table := dbQuery(db, `
 			SELECT count(*)
 			FROM channels
 			WHERE guild_id == ? AND channel_id == ? AND channel_type == 'text'
 		`, msg.GuildID, msg.ChannelID)
 
-		if e != nil {
-			return
-		}
-		defer rows.Close()
-
-		count := 0
-		for rows.Next() {
-			if e := rows.Scan(&count); e != nil {
-				log.Println(e)
-				continue
-			}
-		}
-
 		// illegal text channel
-		if count == 0 {
+		if table[0][0] == "0" {
 			return
 		}
 
@@ -317,36 +361,27 @@ func main() {
 				_, filename, _ := splitFilepath(filepath)
 
 				// print song name, if failure, nothing happens
-				func() {
-					rows, e := db.Query(`
-						SELECT channel_id
-						FROM channels
-						WHERE guild_id == ? AND channel_type == 'text'
-					`, guildID)
+				/*
+					func() {
+						table := dbQuery(db, `
+							SELECT channel_id
+							FROM channels
+							WHERE guild_id == ? AND channel_type == 'text'
+						`, guildID)
 
-					if e != nil {
-						log.Printf("guild '%v', error: %v'", guild.Name, e)
-						return
-					}
-					defer rows.Close()
+						for _, rows := range table {
+							channelID := rows[0]
 
-					for rows.Next() {
-						channelID := ""
+							go func(guild *discordgo.Guild, channelID, filename string) {
+								_, e := discord.ChannelMessageSend(channelID, "`"+filename+"`")
 
-						if e := rows.Scan(&channelID); e != nil {
-							log.Printf("guild '%v', error: %v'", guild.Name, e)
-							continue
+								if e != nil {
+									log.Printf("guild '%v', error: %v'", guild.Name, e)
+								}
+							}(guild, channelID, filename)
 						}
-
-						go func(guild *discordgo.Guild, channelID, filename string) {
-							_, e := discord.ChannelMessageSend(channelID, "`"+filename+"`")
-
-							if e != nil {
-								log.Printf("guild '%v', error: %v'", guild.Name, e)
-							}
-						}(guild, channelID, filename)
-					}
-				}()
+					}()
+				*/
 
 				log.Printf("play song '%v' on guild '%v'", filename, guild.Name)
 
