@@ -2,11 +2,17 @@ package main
 
 import (
 	"log"
+	"strings"
 
 	"github.com/bwmarrin/discordgo"
 )
 
 func discordAddHandlerMessageCreate(vss VoiceSessionStorage) {
+	printCmdLog := func(guildID, channelID string, cmd []string) {
+		guild, channel := discordGuildChannel(guildID, channelID)
+		log.Printf("guild '%v', channel '%v', command '%v'", guild.Name, channel.Name, cmd)
+	}
+
 	// message handling
 	DISCORD.AddHandler(func(sess *discordgo.Session, msg *discordgo.MessageCreate) {
 		// ignore bot's output
@@ -15,22 +21,31 @@ func discordAddHandlerMessageCreate(vss VoiceSessionStorage) {
 		}
 
 		// ignore under specific input message length
-		if len(msg.Content) != 2 {
+		if len(msg.Content) < 1 {
+			return
+		}
+
+		cmd := strings.Fields(msg.Content)
+
+		if cmd[0] != "music" {
 			return
 		}
 
 		// legal text channel
-		if msg.Content == "::" {
+		switch cmd[1] {
+		case "skip":
+			printCmdLog(msg.GuildID, msg.ChannelID, cmd)
+
 			// send signal for move to next song
 			vss[msg.GuildID].signal <- true
 			if e := sess.ChannelMessageDelete(msg.ChannelID, msg.ID); e != nil {
 				log.Println(e)
 				return
 			}
-			return
-		}
 
-		if msg.Content == ":?" {
+		case "name":
+			printCmdLog(msg.GuildID, msg.ChannelID, cmd)
+
 			songName := dbQuery(`
 				SELECT currently_playing
 				FROM channels
@@ -54,7 +69,6 @@ func discordAddHandlerMessageCreate(vss VoiceSessionStorage) {
 				log.Println(e)
 				return
 			}
-			return
 		}
 	})
 }

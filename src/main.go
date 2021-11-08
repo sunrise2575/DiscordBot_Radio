@@ -49,6 +49,8 @@ func loopAudio(guildID string, info VoiceSession) {
 }
 
 func init() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
 	config := gjson.Parse(readFileAsString("../config.json"))
 	FILELIST = findFilesInFolderRecursive(config.Get("folder_path").String())
 	log.Println("read file list complete, file list size:", len(FILELIST))
@@ -66,8 +68,6 @@ func init() {
 func main() {
 	defer DISCORD.Close()
 	defer DATABASE.Close()
-
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	discordSetStatus(":: 으로 음악 넘기기")
 	log.Println("discordSetStatus() OK")

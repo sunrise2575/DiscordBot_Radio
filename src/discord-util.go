@@ -32,6 +32,30 @@ func discordSetStatus(content string) {
 	})
 
 	if e != nil {
-		log.Fatalln("error update status complex,", e)
+		log.Println("error discordSetStatus,", e)
 	}
+}
+
+func discordGuild(guildID string) *discordgo.Guild {
+	guild, e := DISCORD.Guild(guildID)
+	if e != nil {
+		log.Println("error discordGuild,", e)
+		return nil
+	}
+
+	return guild
+}
+
+func discordChannel(channelID string) *discordgo.Channel {
+	channel, e := DISCORD.Channel(channelID)
+	if e != nil {
+		log.Println("error discordGuild,", e)
+		return nil
+	}
+
+	return channel
+}
+
+func discordGuildChannel(guildID, channelID string) (*discordgo.Guild, *discordgo.Channel) {
+	return discordGuild(guildID), discordChannel(channelID)
 }
