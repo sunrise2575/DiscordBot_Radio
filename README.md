@@ -1,4 +1,4 @@
-# Moooclub Radio
+# DiscordBot Radio
 
 Golang으로 제작한 24시간 디스코드 음악 스트리밍 봇
 
